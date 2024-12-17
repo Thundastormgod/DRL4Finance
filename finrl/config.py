@@ -4,7 +4,7 @@ from __future__ import annotations
 DATA_SAVE_DIR = "datasets"
 TRAINED_MODEL_DIR = "trained_models"
 TENSORBOARD_LOG_DIR = "tensorboard_log"
-RESULTS_DIR = "results"
+RESULTS_DIR = "results1"
 
 # date format: '%Y-%m-%d'
 TRAIN_START_DATE = "2014-01-06"  # bug fix: set Monday right, start date set 2014-01-01 ValueError: all the input array dimensions for the concatenation axis must match exactly, but along dimension 0, the array at index 0 has size 1658 and the array at index 1 has size 1657

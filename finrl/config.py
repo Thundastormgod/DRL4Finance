@@ -28,6 +28,9 @@ INDICATORS = [
     "close_30_sma",
     "close_60_sma",
     "close_9_ema",
+    "close_12_ema",
+    "close_50_ema",
+    "close_200_ema",
 
 
 ]

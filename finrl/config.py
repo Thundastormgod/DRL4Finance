@@ -25,12 +25,9 @@ INDICATORS = [
     "rsi_30",
     "cci_30",
     "dx_30",
-    "close_12_sma",
-    "close_50_sma",
-    "close_9_ema",
-    "close 12_ema",
-    "close_50_ema",
-    "close_200_ema",
+    "close_30_sma",
+    "close_60_sma",
+
 ]
 
 

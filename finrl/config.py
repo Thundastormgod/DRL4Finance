@@ -30,7 +30,7 @@ INDICATORS = [
     "close_9_ema",
     "close 12_ema",
     "close_50_ema",
-    "close_200_ema"
+    "close_200_ema",
 ]
 
 

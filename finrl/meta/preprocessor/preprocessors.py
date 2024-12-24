@@ -129,8 +129,8 @@ class FeatureEngineer:
         self,
         use_technical_indicator=True,
         tech_indicator_list=config.INDICATORS,
-        use_vix=False,
-        use_turbulence=False,
+        use_vix=True,
+        use_turbulence=True,
         user_defined_feature=False,
     ):
         self.use_technical_indicator = use_technical_indicator

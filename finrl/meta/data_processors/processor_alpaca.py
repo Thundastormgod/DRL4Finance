@@ -135,7 +135,7 @@ class AlpacaProcessor:
 
         return tmp_df
 
-    def clean_data(self, df):
+    '''def clean_data(self, df):
         print("Data cleaning started")
         tic_list = np.unique(df.tic.values)
         n_tickers = len(tic_list)
@@ -175,7 +175,66 @@ class AlpacaProcessor:
 
         print("Data clean finished!")
 
-        return new_df
+        return new_df'''
+    
+    def clean_data(self, df):
+    """
+    Cleans and processes the input DataFrame to ensure consistent data for all tickers and timestamps.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame containing raw data.
+
+    Returns:
+        pd.DataFrame: The cleaned and processed DataFrame.
+    """
+    print("Data cleaning started")
+
+    # List of unique tickers in the data
+    tic_list = np.unique(df.tic.values)
+    n_tickers = len(tic_list)
+
+    # Aligning start and end dates to ensure data consistency
+    print("Align start and end dates")
+    grouped = df.groupby("timestamp")
+    filter_mask = grouped.transform("count")["tic"] >= n_tickers
+
+    # Check if the filtering results in an empty DataFrame
+    if filter_mask.sum() == 0:
+        raise ValueError("No timestamps meet the required number of tickers. Check your data.")
+    df = df[filter_mask]
+
+    # Generate a full timestamp index based on trading days and hours
+    print("Generate full timestamp index")
+    trading_days = self.get_trading_days(start=self.start, end=self.end)
+    times = [
+        pd.Timestamp(day + " 09:30:00", tz="America/New_York") + pd.Timedelta(minutes=i)
+        for day in trading_days
+        for i in range(390)
+    ]
+
+    # Process each ticker individually
+    print("Start processing tickers")
+    future_results = []
+    for tic in tic_list:
+        # Clean individual ticker data
+        result = self.clean_individual_ticker((tic, df.copy(), times))
+        if result.empty:
+            print(f"Warning: No data processed for ticker {tic}.")
+        future_results.append(result)
+
+    # Concatenate all processed data
+    print("Concat and rename")
+    new_df = pd.concat(future_results, ignore_index=True)
+    new_df = new_df.reset_index()
+    new_df = new_df.rename(columns={"index": "timestamp"})
+
+    # Validate the cleaned DataFrame
+    if new_df.empty or new_df.isnull().all().all():
+        raise ValueError("Cleaned data contains no valid values. Check the processing logic.")
+
+    print("Data cleaning finished!")
+    return new_df
+
 
     def add_technical_indicator(
         self,

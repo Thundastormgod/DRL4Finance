@@ -175,8 +175,8 @@ class AlpacaProcessor:
 
         print("Data clean finished!")
 
-        return new_df'''
-    
+        return new_df
+    '''
     def clean_data(self, df):
     """
     Cleans and processes the input DataFrame to ensure consistent data for all tickers and timestamps.

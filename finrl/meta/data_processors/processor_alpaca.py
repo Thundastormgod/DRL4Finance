@@ -135,48 +135,6 @@ class AlpacaProcessor:
 
         return tmp_df
 
-    '''def clean_data(self, df):
-        print("Data cleaning started")
-        tic_list = np.unique(df.tic.values)
-        n_tickers = len(tic_list)
-
-        print("align start and end dates")
-        grouped = df.groupby("timestamp")
-        filter_mask = grouped.transform("count")["tic"] >= n_tickers
-        df = df[filter_mask]
-
-        # ... (generating 'times' series, same as in your existing code)
-
-        trading_days = self.get_trading_days(start=self.start, end=self.end)
-
-        # produce full timestamp index
-        print("produce full timestamp index")
-        times = []
-        for day in trading_days:
-            NY = "America/New_York"
-            current_time = pd.Timestamp(day + " 09:30:00").tz_localize(NY)
-            for i in range(390):
-                times.append(current_time)
-                current_time += pd.Timedelta(minutes=1)
-
-        print("Start processing tickers")
-
-        future_results = []
-        for tic in tic_list:
-            result = self.clean_individual_ticker((tic, df.copy(), times))
-            future_results.append(result)
-
-        print("ticker list complete")
-
-        print("Start concat and rename")
-        new_df = pd.concat(future_results)
-        new_df = new_df.reset_index()
-        new_df = new_df.rename(columns={"index": "timestamp"})
-
-        print("Data clean finished!")
-
-        return new_df
-    '''
     def clean_data(self, df):
     """
     Cleans and processes the input DataFrame to ensure consistent data for all tickers and timestamps.

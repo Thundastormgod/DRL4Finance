@@ -129,8 +129,8 @@ class FeatureEngineer:
         self,
         use_technical_indicator=True,
         tech_indicator_list=config.INDICATORS,
-        use_vix=True,
-        use_turbulence=True,
+        use_vix=False,
+        use_turbulence=False,
         user_defined_feature=False,
     ):
         self.use_technical_indicator = use_technical_indicator
@@ -186,16 +186,16 @@ class FeatureEngineer:
         merged_closes = merged_closes.dropna(axis=1)
         tics = merged_closes.columns
         df = df[df.tic.isin(tics)]
-        df = data.copy()
-        list_ticker = df["tic"].unique().tolist()
-        only apply to daily level data, need to fix for minute level
-        list_date = list(pd.date_range(df['date'].min(),df['date'].max()).astype(str))
-        combination = list(itertools.product(list_date,list_ticker))
+        # df = data.copy()
+        # list_ticker = df["tic"].unique().tolist()
+        # only apply to daily level data, need to fix for minute level
+        # list_date = list(pd.date_range(df['date'].min(),df['date'].max()).astype(str))
+        # combination = list(itertools.product(list_date,list_ticker))
 
-        df_full = pd.DataFrame(combination,columns=["date","tic"]).merge(df,on=["date","tic"],how="left")
-        df_full = df_full[df_full['date'].isin(df['date'])]
-        df_full = df_full.sort_values(['date','tic'])
-        df_full = df_full.fillna(0)
+        # df_full = pd.DataFrame(combination,columns=["date","tic"]).merge(df,on=["date","tic"],how="left")
+        # df_full = df_full[df_full['date'].isin(df['date'])]
+        # df_full = df_full.sort_values(['date','tic'])
+        # df_full = df_full.fillna(0)
         return df
 
     def add_technical_indicator(self, data):

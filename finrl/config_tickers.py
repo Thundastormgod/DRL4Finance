@@ -135,7 +135,7 @@ NAS_100_TICKER = [
 "CSGP",
 "ZS",
 "ON",
-“WBD",
+"WBD",
 "GFS",
 "CDW",
 "BIIB",

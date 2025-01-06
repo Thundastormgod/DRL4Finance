@@ -112,7 +112,7 @@ NAS_100_TICKER = [
 "ROST",
 "DDOG",
 "AEP",
-“LULU”,
+"LULU",
 "AXON",
 "FANG",
 "KDP",

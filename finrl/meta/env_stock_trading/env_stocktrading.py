@@ -422,11 +422,11 @@ class StockTradingEnv(gym.Env):
         else:
             return self.df.index
 
-    def _seed(self, seed=None):
+   def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
     def _make_plot(self):
         plt.plot(self.asset_memory, 'r')
         plt.savefig(f'results/account_value_trade_{self.episode}.png')
-        plt.close()
+        plt.close()   

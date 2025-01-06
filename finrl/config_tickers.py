@@ -39,7 +39,7 @@ DOW_30_TICKER = [
 
 # Nasdaq 100 constituents at 2019/01
 NAS_100_TICKER = [
-“AAPL”,
+"AAPL",
 "NVDA",
 "MSFT",
 "GOOG",

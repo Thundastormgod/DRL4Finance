@@ -9,7 +9,7 @@ import seaborn as sns
 from datetime import datetime
 from typing import List
 
-class StockingTradingEnv(gym.Env):
+class StockTradingEnv(gym.Env):
     """A sophisticated stock trading environment combining features from multiple implementations"""
     
     metadata = {"render.modes": ["human"]}

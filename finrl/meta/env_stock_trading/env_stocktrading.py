@@ -7,7 +7,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from typing import List, Dict
 
 class StockTradingEnv(gym.Env):
-    """A stock trading environment that uses weighted technical indicators for human-like trading decisions"""
+    """A stock trading environment that includes VIX and turbulence for risk management"""
     
     metadata = {'render.modes': ['human']}
     
@@ -50,7 +50,25 @@ class StockTradingEnv(gym.Env):
         self.turbulence_threshold = turbulence_threshold
         self.risk_indicator_col = risk_indicator_col
         
-        # Technical indicator weights and thresholds
+        # Risk thresholds
+        self.risk_thresholds = {
+            'vix_normal': 20,
+            'vix_elevated': 30,
+            'vix_extreme': 40,
+            'turbulence_normal': 1.0,
+            'turbulence_elevated': 2.0,
+            'turbulence_extreme': 3.0
+        }
+        
+        # Position sizing based on risk
+        self.position_sizing = {
+            'normal': 1.0,
+            'elevated': 0.5,
+            'extreme': 0.25,
+            'crisis': 0
+        }
+        
+        # Technical indicator weights
         self.indicator_weights = {
             'trend': {
                 'sma': 0.3,
@@ -60,23 +78,18 @@ class StockTradingEnv(gym.Env):
             'momentum': {
                 'rsi': 0.4,
                 'cci': 0.3,
-                'mfi': 0.3
+                'dx': 0.3
             },
             'volatility': {
-                'bbands': 0.6,
-                'atr': 0.4
-            },
-            'volume': {
-                'obv': 0.5,
-                'volume': 0.5
+                'bbands': 1.0
             }
         }
         
+        # Category weights
         self.category_weights = {
-            'trend': 0.35,
-            'momentum': 0.25,
-            'volatility': 0.25,
-            'volume': 0.15
+            'trend': 0.4,
+            'momentum': 0.3,
+            'volatility': 0.3
         }
         
         # Technical thresholds
@@ -85,12 +98,10 @@ class StockTradingEnv(gym.Env):
             'rsi_overbought': 70,
             'cci_oversold': -100,
             'cci_overbought': 100,
-            'mfi_oversold': 20,
-            'mfi_overbought': 80,
             'bbands_squeeze': 0.1
         }
         
-        # Action and observation spaces
+        # Spaces
         self.action_space = spaces.Box(low=-1, high=1, shape=(self.action_space,))
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.state_space,))
         
@@ -101,7 +112,7 @@ class StockTradingEnv(gym.Env):
         self.initial = initial
         self.previous_state = previous_state
         
-        # Initialize tracking variables
+        # Initialize tracking
         self.asset_memory = [self.initial_amount + np.sum(
             np.array(self.num_stock_shares) * np.array(self.state[1:1 + self.stock_dim])
         )]
@@ -112,33 +123,58 @@ class StockTradingEnv(gym.Env):
         self._initialize_trading_memory()
         self._seed()
     
-    def _initialize_trading_memory(self):
-        """Initialize variables for tracking trading performance"""
-        self.cost = 0
-        self.trades = 0
-        self.reward = 0
-        self.turbulence = 0
-        self.current_position_duration = np.zeros(self.stock_dim)
-        self.position_history = []
+    def _assess_market_risk(self) -> dict:
+        """Evaluate market risk levels using VIX and turbulence"""
+        current_vix = self.data['vix'].values[0] if 'vix' in self.data.columns else None
+        current_turbulence = self.data[self.risk_indicator_col].values[0] if self.risk_indicator_col in self.data.columns else None
+        
+        risk_assessment = {
+            'vix_risk': 'normal',
+            'turbulence_risk': 'normal',
+            'position_size_mult': 1.0,
+            'should_exit': False
+        }
+        
+        # Assess VIX risk level
+        if current_vix is not None:
+            if current_vix >= self.risk_thresholds['vix_extreme']:
+                risk_assessment['vix_risk'] = 'extreme'
+            elif current_vix >= self.risk_thresholds['vix_elevated']:
+                risk_assessment['vix_risk'] = 'elevated'
+        
+        # Assess turbulence risk level
+        if current_turbulence is not None:
+            if current_turbulence >= self.risk_thresholds['turbulence_extreme']:
+                risk_assessment['turbulence_risk'] = 'extreme'
+            elif current_turbulence >= self.risk_thresholds['turbulence_elevated']:
+                risk_assessment['turbulence_risk'] = 'elevated'
+        
+        # Determine overall risk level and position sizing
+        if risk_assessment['vix_risk'] == 'extreme' or risk_assessment['turbulence_risk'] == 'extreme':
+            risk_assessment['position_size_mult'] = self.position_sizing['extreme']
+            risk_assessment['should_exit'] = True
+        elif risk_assessment['vix_risk'] == 'elevated' or risk_assessment['turbulence_risk'] == 'elevated':
+            risk_assessment['position_size_mult'] = self.position_sizing['elevated']
+        
+        return risk_assessment
     
     def _calculate_technical_signals(self, index: int) -> Dict[str, float]:
-        """Calculate weighted technical signals for a stock"""
+        """Calculate technical signals including risk indicators"""
         signals = {
             'trend': 0,
             'momentum': 0,
-            'volatility': 0,
-            'volume': 0
+            'volatility': 0
         }
         
         # Trend signals
-        if 'close_30_sma' in self.tech_indicator_list:
-            sma_signal = 1 if self.data[f'close_30_sma'].values[index] > self.data['close'].values[index] else -1
+        if 'close_30_sma' in self.tech_indicator_list and 'close_60_sma' in self.tech_indicator_list:
+            sma_signal = 1 if self.data['close_30_sma'].values[index] > self.data['close_60_sma'].values[index] else -1
             signals['trend'] += sma_signal * self.indicator_weights['trend']['sma']
-            
-        if 'close_50_ema' in self.tech_indicator_list:
-            ema_signal = 1 if self.data[f'close_50_ema'].values[index] > self.data['close'].values[index] else -1
+        
+        if all(x in self.tech_indicator_list for x in ['close_9_ema', 'close_50_ema']):
+            ema_signal = 1 if self.data['close_9_ema'].values[index] > self.data['close_50_ema'].values[index] else -1
             signals['trend'] += ema_signal * self.indicator_weights['trend']['ema']
-            
+        
         if 'macd' in self.tech_indicator_list:
             macd_signal = 1 if self.data['macd'].values[index] > 0 else -1
             signals['trend'] += macd_signal * self.indicator_weights['trend']['macd']
@@ -164,6 +200,11 @@ class StockTradingEnv(gym.Env):
                 cci_signal = 0
             signals['momentum'] += cci_signal * self.indicator_weights['momentum']['cci']
         
+        if 'dx_30' in self.tech_indicator_list:
+            dx = self.data['dx_30'].values[index]
+            dx_signal = 1 if dx > 25 else (-1 if dx < -25 else 0)
+            signals['momentum'] += dx_signal * self.indicator_weights['momentum']['dx']
+        
         # Volatility signals
         if all(x in self.tech_indicator_list for x in ['boll_ub', 'boll_lb']):
             current_price = self.data['close'].values[index]
@@ -181,30 +222,50 @@ class StockTradingEnv(gym.Env):
         return signals
     
     def _calculate_composite_signal(self, signals: Dict[str, float]) -> float:
-        """Calculate the overall trading signal based on weighted category signals"""
+        """Calculate overall trading signal"""
         composite_signal = 0
         for category, weight in self.category_weights.items():
             composite_signal += signals[category] * weight
         return np.clip(composite_signal, -1, 1)
     
     def _modify_action(self, action: float, index: int) -> float:
-        """Modify the model's action based on technical signals"""
+        """Modify action based on technical and risk signals"""
         signals = self._calculate_technical_signals(index)
         technical_signal = self._calculate_composite_signal(signals)
+        risk_assessment = self._assess_market_risk()
         
-        # Combine model action with technical signals
+        if risk_assessment['should_exit']:
+            return -1.0
+        
         modified_action = 0.7 * action + 0.3 * technical_signal
+        modified_action *= risk_assessment['position_size_mult']
+        
         return np.clip(modified_action, -1, 1)
     
+    def _initialize_trading_memory(self):
+        """Initialize trading tracking variables"""
+        self.cost = 0
+        self.trades = 0
+        self.reward = 0
+        self.turbulence = 0
+        self.current_position_duration = np.zeros(self.stock_dim)
+        self.position_history = []
+    
     def _buy_stock(self, index: int, action: float) -> float:
-        """Execute buy order with technical analysis influence"""
+        """Execute buy order with risk management"""
         modified_action = self._modify_action(action, index)
+        risk_assessment = self._assess_market_risk()
+        
+        if risk_assessment['should_exit']:
+            return 0
         
         if modified_action > 0:
             current_price = self.state[index + 1]
             available_amount = self.state[0] // (current_price * (1 + self.buy_cost_pct[index]))
-            # Scale buy amount by signal strength
-            buy_num_shares = min(available_amount, modified_action * self.hmax)
+            buy_num_shares = min(
+                available_amount,
+                modified_action * self.hmax * risk_assessment['position_size_mult']
+            )
             
             if buy_num_shares > 0:
                 buy_amount = current_price * buy_num_shares * (1 + self.buy_cost_pct[index])
@@ -217,14 +278,21 @@ class StockTradingEnv(gym.Env):
         return 0
     
     def _sell_stock(self, index: int, action: float) -> float:
-        """Execute sell order with technical analysis influence"""
+        """Execute sell order with risk management"""
         modified_action = self._modify_action(action, index)
+        risk_assessment = self._assess_market_risk()
+        
+        if risk_assessment['should_exit']:
+            modified_action = -1.0
         
         if modified_action < 0:
             current_price = self.state[index + 1]
             current_holdings = self.state[index + self.stock_dim + 1]
-            # Scale sell amount by signal strength
-            sell_num_shares = min(abs(modified_action) * self.hmax, current_holdings)
+            
+            sell_num_shares = current_holdings if risk_assessment['should_exit'] else min(
+                abs(modified_action) * self.hmax,
+                current_holdings
+            )
             
             if sell_num_shares > 0:
                 sell_amount = current_price * sell_num_shares * (1 - self.sell_cost_pct[index])
@@ -246,13 +314,11 @@ class StockTradingEnv(gym.Env):
             actions = actions * self.hmax
             self.actions_memory.append(actions)
             
-            # Calculate beginning total asset
             begin_total_asset = self.state[0] + sum(
                 np.array(self.state[1:self.stock_dim + 1]) *
                 np.array(self.state[self.stock_dim + 1:self.stock_dim * 2 + 1])
             )
             
-            # Execute trades
             argsort_actions = np.argsort(actions)
             sell_index = argsort_actions[:np.where(actions < 0)[0].shape[0]]
             buy_index = argsort_actions[::-1][:np.where(actions > 0)[0].shape[0]]
@@ -263,20 +329,16 @@ class StockTradingEnv(gym.Env):
             for index in buy_index:
                 self._buy_stock(index, actions[index])
             
-            # Update state
             self.day += 1
             self.data = self.df.loc[self.day, :]
             self.state = self._update_state()
             
-            # Calculate reward
             end_total_asset = self.state[0] + sum(
                 np.array(self.state[1:self.stock_dim + 1]) *
                 np.array(self.state[self.stock_dim + 1:self.stock_dim * 2 + 1])
             )
             
-            # Calculate returns-based reward with risk adjustment
             self.reward = self.reward_scaling * (end_total_asset - begin_total_asset)
-            # Penalize excessive trading
             self.reward *= max(0, 1 - self.cost / end_total_asset)
             
             self.rewards_memory.append(self.reward)
@@ -286,6 +348,7 @@ class StockTradingEnv(gym.Env):
             return self.state, self.reward, self.terminal, False, {}
     
     def reset(self, seed=None, options=None):
+        """Reset the environment"""
         self.day = 0
         self.data = self.df.loc[self.day, :]
         self.state = self._initiate_state()
@@ -308,53 +371,81 @@ class StockTradingEnv(gym.Env):
     def _initiate_state(self):
         """Initialize the state space"""
         if len(self.df.tic.unique()) > 1:
-            state = (
-                [self.initial_amount] +
-                self.data.close.values.tolist() +
-                self.num_stock_shares +
-                sum([self.data[tech].values.tolist() for tech in self.tech_indicator_list], [])
-            )
+            # Basic state components
+            state = [self.initial_amount] + \
+                    self.data.close.values.tolist() + \
+                    self.num_stock_shares
+            
+            # Add technical indicators
+            for tech in self.tech_indicator_list:
+                if tech not in ['vix', 'turbulence']:  # Handle regular technical indicators
+                    state += self.data[tech].values.tolist()
+            
+            # Add risk indicators at the end of state
+            if 'vix' in self.tech_indicator_list:
+                state.append(self.data['vix'].values[0])
+            if 'turbulence' in self.tech_indicator_list:
+                state.append(self.data['turbulence'].values[0])
+        
         else:
-            state = (
-                [self.initial_amount] +
-                [self.data.close] +
-                self.num_stock_shares +
-                sum([[self.data[tech]] for tech in self.tech_indicator_list], [])
-            )
+            # Single stock case
+            state = [self.initial_amount] + \
+                    [self.data.close] + \
+                    self.num_stock_shares
+            
+            # Add technical indicators
+            for tech in self.tech_indicator_list:
+                if tech not in ['vix', 'turbulence']:  # Handle regular technical indicators
+                    state.append(self.data[tech])
+            
+            # Add risk indicators at the end of state
+            if 'vix' in self.tech_indicator_list:
+                state.append(self.data['vix'])
+            if 'turbulence' in self.tech_indicator_list:
+                state.append(self.data['turbulence'])
+        
         return state
     
     def _update_state(self):
         """Update the state space"""
         if len(self.df.tic.unique()) > 1:
-            state = (
-                [self.state[0]] +
-                self.data.close.values.tolist() +
-                list(self.state[self.stock_dim + 1:self.stock_dim * 2 + 1]) +
-                sum([self.data[tech].values.tolist() for tech in self.tech_indicator_list], [])
-            )
+            # Basic state components
+            state = [self.state[0]] + \
+                    self.data.close.values.tolist() + \
+                    list(self.state[self.stock_dim + 1:self.stock_dim * 2 + 1])
+            
+            # Add technical indicators
+            for tech in self.tech_indicator_list:
+                if tech not in ['vix', 'turbulence']:  # Handle regular technical indicators
+                    state += self.data[tech].values.tolist()
+            
+            # Add risk indicators at the end of state
+            if 'vix' in self.tech_indicator_list:
+                state.append(self.data['vix'].values[0])
+            if 'turbulence' in self.tech_indicator_list:
+                state.append(self.data['turbulence'].values[0])
+        
         else:
-            state = (
-                [self.state[0]] +
-                [self.data.close] +
-                list(self.state[self.stock_dim + 1:self.stock_dim * 2 + 1]) +
-                sum([[self.data[tech]] for tech in self.tech_indicator_list], [])
-            )
+            # Single stock case
+            state = [self.state[0]] + \
+                    [self.data.close] + \
+                    list(self.state[self.stock_dim + 1:self.stock_dim * 2 + 1])
+            
+            # Add technical indicators
+            for tech in self.tech_indicator_list:
+                if tech not in ['vix', 'turbulence']:  # Handle regular technical indicators
+                    state.append(self.data[tech])
+            
+            # Add risk indicators at the end of state
+            if 'vix' in self.tech_indicator_list:
+                state.append(self.data['vix'])
+            if 'turbulence' in self.tech_indicator_list:
+                state.append(self.data['turbulence'])
+        
         return state
     
-    def _get_date(self):
-        """Get current date"""
-        if len(self.df.tic.unique()) > 1:
-            date = self.data.date.unique()[0]
-        else:
-            date = self.data.date
-        return date
-    
-    def _seed(self, seed=None):
-        """Set random seed"""
-        self.np_random, seed = seeding.np_random(seed)
-    
     def get_portfolio_stats(self):
-        """Calculate portfolio statistics"""
+        """Calculate portfolio statistics with risk metrics"""
         df_returns = pd.DataFrame(self.asset_memory, columns=['total_assets'])
         df_returns['returns'] = df_returns['total_assets'].pct_change()
         df_returns['date'] = self.date_memory
@@ -369,6 +460,16 @@ class StockTradingEnv(gym.Env):
             'Total Trades': self.trades,
             'Total Cost': self.cost
         }
+        
+        # Add VIX and turbulence correlation if available
+        if 'vix' in self.data.columns:
+            vix_corr = df_returns['returns'].corr(self.df['vix'])
+            stats['VIX Correlation'] = vix_corr
+        
+        if self.risk_indicator_col in self.data.columns:
+            turb_corr = df_returns['returns'].corr(self.df[self.risk_indicator_col])
+            stats['Turbulence Correlation'] = turb_corr
+        
         return stats
     
     def get_trading_history(self):
@@ -377,7 +478,7 @@ class StockTradingEnv(gym.Env):
             'date': self.date_memory[:-1],
             'actions': self.actions_memory,
             'rewards': self.rewards_memory,
-            'portfolio_value': self.asset_memory[:-1]
+            'portfolio_value': self.asset_memory[:-1],
         })
         return history
     
@@ -389,23 +490,42 @@ class StockTradingEnv(gym.Env):
             'cost_to_portfolio_value': self.cost / self.asset_memory[-1] if self.asset_memory else 0
         }
     
+    def _get_date(self):
+        """Get current date"""
+        if len(self.df.tic.unique()) > 1:
+            date = self.data.date.unique()[0]
+        else:
+            date = self.data.date
+        return date
+    
+    def _seed(self, seed=None):
+        """Set random seed"""
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
+    
     def render(self, mode='human'):
-        """
-        Render the environment to the screen
-        """
+        """Render the environment"""
         if mode != 'human':
             raise NotImplementedError(f"{mode} mode is not supported")
         
-        # Print current state
-        print(f"Date: {self._get_date()}")
+        print(f"\nDate: {self._get_date()}")
         print(f"Portfolio Value: ${self.asset_memory[-1]:,.2f}")
         print(f"Cash: ${self.state[0]:,.2f}")
-        print(f"Holdings:")
+        
+        risk_assessment = self._assess_market_risk()
+        print(f"\nRisk Assessment:")
+        print(f"VIX Risk Level: {risk_assessment['vix_risk']}")
+        print(f"Turbulence Risk Level: {risk_assessment['turbulence_risk']}")
+        print(f"Position Size Multiplier: {risk_assessment['position_size_mult']:.2f}")
+        
+        print(f"\nHoldings:")
         for i in range(self.stock_dim):
             current_price = self.state[i + 1]
             holdings = self.state[i + self.stock_dim + 1]
             position_value = current_price * holdings
             print(f"Stock {i}: {holdings:.0f} shares @ ${current_price:.2f} = ${position_value:,.2f}")
+        
+        print(f"\nTrading Statistics:")
         print(f"Total Trades: {self.trades}")
         print(f"Total Trading Cost: ${self.cost:,.2f}")
         print("-" * 50)

@@ -6,7 +6,7 @@ from gymnasium.utils import seeding
 from stable_baselines3.common.vec_env import DummyVecEnv
 from typing import List, Dict
 
-class TechnicalTradingEnv(gym.Env):
+class StockTradingEnv(gym.Env):
     """A stock trading environment that uses weighted technical indicators for human-like trading decisions"""
     
     metadata = {'render.modes': ['human']}
